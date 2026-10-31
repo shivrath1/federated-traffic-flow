@@ -1,4 +1,4 @@
-# MSE806 Federated Traffic Flow Prediction
+# Federated Traffic Flow Prediction
 
 A one-machine research prototype that predicts the next hour of METR-LA traffic speed readings and compares a centralized shared-linear model with a four-client FedAvg simulation. The forecast uses 12 five-minute readings as input and returns 12 future five-minute readings. Clients are simulated sensor groups, not real organizations.
 
