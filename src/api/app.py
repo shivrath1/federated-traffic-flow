@@ -432,10 +432,9 @@ def create_app(
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
-    try:
-        app.state.traffic = TrafficService(Path(dataset_path), Path(model_root), Path(processed_root))
-    except RuntimeError:
-        app.state.initialization_error = "METR-LA data could not be initialized"
+    app.state.dataset_path = Path(dataset_path)
+    app.state.model_root = Path(model_root)
+    app.state.processed_root = Path(processed_root)
 
     @app.exception_handler(Exception)
     async def safe_unhandled_error(_: Request, __: Exception) -> JSONResponse:
@@ -443,7 +442,15 @@ def create_app(
 
     def service(request: Request) -> TrafficService:
         if not hasattr(request.app.state, "traffic"):
-            raise HTTPException(status_code=503, detail=getattr(request.app.state, "initialization_error", "METR-LA data is unavailable"))
+            try:
+                request.app.state.traffic = TrafficService(
+                    request.app.state.dataset_path,
+                    request.app.state.model_root,
+                    request.app.state.processed_root,
+                )
+            except RuntimeError:
+                request.app.state.initialization_error = "METR-LA data could not be initialized"
+                raise HTTPException(status_code=503, detail=request.app.state.initialization_error) from None
         return request.app.state.traffic
 
     @app.get("/api/health")

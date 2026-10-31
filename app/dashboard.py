@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import os
-import json
 from datetime import date, datetime, time
 
 import altair as alt
 import pandas as pd
-import requests
 import streamlit as st
+from fastapi import HTTPException
 
-API_BASE = os.environ.get("TRAFFIC_API_URL", "http://127.0.0.1:8000").rstrip("/")
+from src.api.app import ROOT, TrafficService
+
 MODEL_COLORS = {
     "Centralized baseline": "#4f6bed",
     "Centralized with noise augmentation": "#9b72cf",
@@ -56,28 +55,14 @@ st.markdown(
 st.title("Federated Traffic Flow Prediction")
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
-def api_get(path: str, params: tuple[tuple[str, str], ...] = ()) -> dict:
-    response = requests.get(f"{API_BASE}{path}", params=dict(params), timeout=90)
-    if not response.ok:
-        try:
-            detail = response.json().get("detail", "The API request failed")
-        except ValueError:
-            detail = "The API request failed"
-        raise RuntimeError(str(detail))
-    return response.json()
-
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def api_post(path: str, body_json: str) -> dict:
-    response = requests.post(f"{API_BASE}{path}", json=json.loads(body_json), timeout=90)
-    if not response.ok:
-        try:
-            detail = response.json().get("detail", "The API request failed")
-        except ValueError:
-            detail = "The API request failed"
-        raise RuntimeError(str(detail))
-    return response.json()
+@st.cache_resource(show_spinner=False)
+def load_research_service() -> TrafficService:
+    """Load tracked METR-LA data and saved artifacts once per Streamlit process."""
+    return TrafficService(
+        ROOT / "data/raw/metr-la.h5",
+        ROOT / "models",
+        ROOT / "data/processed/metr_la",
+    )
 
 
 def section_heading(kicker: str, heading: str, explanation: str | None = None) -> None:
@@ -97,18 +82,20 @@ def chart_line(data: pd.DataFrame, *, x: str, y: str, color: str, tooltip: list[
 
 
 try:
-    with st.spinner("Connecting to the local research API and loading held-out evaluation results…"):
-        sensor_data = api_get("/api/sensors")
-        model_data = api_get("/api/models")
-        options = api_get("/api/forecast-options")
-        evaluation = api_get("/api/evaluation")
-except (requests.RequestException, RuntimeError) as exc:
-    st.error(f"Could not load research data from the local API: {exc}. Start the API and check its address.")
+    with st.spinner("Loading METR-LA data, saved models, and held-out evaluation results…"):
+        research = load_research_service()
+        sensor_data = {"sensor_ids": research.sensor_ids}
+        model_data = research.model_list()
+        options = research.forecast_options()
+        evaluation = research.evaluation()
+except (HTTPException, RuntimeError, OSError, ValueError) as exc:
+    detail = getattr(exc, "detail", str(exc))
+    st.error(f"Could not load the research data or saved model artifacts: {detail}")
     st.stop()
 
 available_models = [item for item in model_data["models"] if item["available"]]
 if not available_models:
-    st.error("No saved model artifacts are available to the API.")
+    st.error("No saved model artifacts are available in this repository checkout.")
     st.stop()
 
 default_origin = datetime.fromisoformat(options["default_forecast_origin"])
@@ -192,13 +179,10 @@ st.caption(
 
 try:
     with st.spinner(f"Evaluating sensor {sensor_id} with {selected_model['name']}…"):
-        forecast_result = api_post("/api/predict", json.dumps({
-            "sensor_id": sensor_id,
-            "model_id": model_id,
-            "forecast_origin": forecast_origin_iso,
-        }, sort_keys=True))
-except (requests.RequestException, RuntimeError) as exc:
-    st.error(f"This forecast window could not be evaluated: {exc}")
+        forecast_result = research.predict(sensor_id, model_id, forecast_origin)
+except (HTTPException, RuntimeError, OSError, ValueError) as exc:
+    detail = getattr(exc, "detail", str(exc))
+    st.error(f"This forecast window could not be evaluated: {detail}")
     st.stop()
 
 st.markdown(f"### Sensor {sensor_id} · {forecast_result['model_name']}")

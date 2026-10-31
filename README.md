@@ -68,25 +68,22 @@ Run the steps from the project root in order. Commands use their default project
 
 The data pipeline uses chronological 70/15/15 splits. Model runs use train data for fitting, validation data for checkpoint selection, and test data only for final evaluation. Defaults, seeds, metrics, and details are recorded in each `models/<experiment>/config.json` and `metrics.json`. See the member reports and `reports/final-experiment-comparison.md` for methods and interpretation.
 
-## Start the API and dashboard
+## Start the dashboard
 
-Start the FastAPI service in the first terminal:
-
-```bash
-python3 -m uvicorn src.api.app:app --host 127.0.0.1 --port 8000
-```
-
-Start the dashboard in a second terminal:
+The Streamlit app reads the tracked METR-LA data, saved models, and metrics directly. It does not need the FastAPI server. Install its entrypoint-specific dependencies and run it from the project root:
 
 ```bash
+python3 -m pip install -r app/requirements.txt
 python3 -m streamlit run app/dashboard.py
 ```
 
-Open the local Streamlit address printed in the second terminal. The dashboard uses `http://127.0.0.1:8000` by default. To point it elsewhere, set `TRAFFIC_API_URL` before launching Streamlit. FastAPI's interactive API schema is at `http://127.0.0.1:8000/docs`.
+To run the optional FastAPI service separately for API development or testing, install the full project requirements and start it with `python3 -m uvicorn src.api.app:app --host 127.0.0.1 --port 8000`. Its interactive schema is at `http://127.0.0.1:8000/docs`; this service is not a dashboard dependency.
 
-The dashboard lets a user choose a sensor, one of the four saved model configurations, and a date/time in the held-out test period. It defaults to a representative 08:00 test window selected by matching its preceding-hour, all-sensor mean to the training-period 08:00 median; selection does not use future targets. Morning peak, midday, evening peak, and late-night presets are available. The chart distinguishes earlier context, the exact 12 model-input readings, the next 12 predictions, and their held-out actual values. The API rejects timestamps without a full input and future target window.
+The dashboard lets a user choose a sensor, one of the four saved model configurations, and a date/time in the held-out test period. It defaults to a representative 08:00 test window selected by matching its preceding-hour, all-sensor mean to the training-period 08:00 median; selection does not use future targets. Morning peak, midday, evening peak, and late-night presets are available. The chart distinguishes earlier context, the exact 12 model-input readings, the next 12 predictions, and their held-out actual values. Forecast validation is performed directly by the shared Python service.
 
-The dashboard also shows selected-window MAE/RMSE beside a persistence baseline, saved full-test-set MAE/RMSE for all four models, and diagnostics by forecast horizon, start hour, and sensor. Overall saved metrics remain unchanged; the API computes persistence and diagnostic breakdowns from the existing test arrays. Values are shown in the dataset's speed units because the project did not independently verify a physical unit conversion. Every forecast is historical and retrospective; the interface is not a live traffic service.
+The dashboard also shows selected-window MAE/RMSE beside a persistence baseline, saved full-test-set MAE/RMSE for all four models, and diagnostics by forecast horizon, start hour, and sensor. Overall saved metrics remain unchanged; persistence and diagnostic breakdowns are computed from the existing test arrays. Values are shown in the dataset's speed units because the project did not independently verify a physical unit conversion. Every forecast is historical and retrospective; the interface is not a live traffic service.
+
+For Streamlit Community Cloud, `app/requirements.txt` declares the dashboard dependencies next to its entrypoint. The app resolves data and artifact locations from the repository root, so it does not need a local API URL, secrets, or a separate backend deployment. Keep `data/raw/metr-la.h5`, `data/processed/metr_la/`, and the required saved model folders in the repository checkout.
 
 ## Tests and syntax checks
 
@@ -97,7 +94,7 @@ python3 -m pytest -q
 python3 -m compileall -q src app tests
 ```
 
-API tests use FastAPI's `TestClient`. The dashboard/API integration was checked using a local API and Streamlit `AppTest`; see `reports/report-evidence.md` for observed results. Local loopback access may be restricted in some managed or sandboxed environments.
+API tests use FastAPI's `TestClient`. The dashboard was also checked with Streamlit `AppTest` loading the tracked data and artifacts directly, with no API server running; see `reports/report-evidence.md` for observed results.
 
 ## Further documentation
 - [Data preparation report](reports/member-1-data-report.md)
