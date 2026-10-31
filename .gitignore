@@ -33,3 +33,10 @@ htmlcov/
 
 # Temporary files
 *.tmp
+
+# MSE806 assessment and research documents
+MSE806-Assessment_Brief.pdf
+MSE806_Simple_Task_Focused_*
+PLANS.md
+AGENTS.md
+Research_Paper.pdf
