@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import date, datetime, time
+from pathlib import Path
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 from fastapi import HTTPException
 
-from src.api.app import ROOT, TrafficService
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from src.api.app import TrafficService
 
 MODEL_COLORS = {
     "Centralized baseline": "#4f6bed",
@@ -59,9 +65,9 @@ st.title("Federated Traffic Flow Prediction")
 def load_research_service() -> TrafficService:
     """Load tracked METR-LA data and saved artifacts once per Streamlit process."""
     return TrafficService(
-        ROOT / "data/raw/metr-la.h5",
-        ROOT / "models",
-        ROOT / "data/processed/metr_la",
+        REPOSITORY_ROOT / "data/raw/metr-la.h5",
+        REPOSITORY_ROOT / "models",
+        REPOSITORY_ROOT / "data/processed/metr_la",
     )
 
 
