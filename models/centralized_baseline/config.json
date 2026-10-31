@@ -1,0 +1,38 @@
+{
+  "lookback_steps": 12,
+  "horizon_steps": 12,
+  "max_epochs": 30,
+  "batch_windows": 256,
+  "learning_rate": 0.001,
+  "patience": 4,
+  "min_delta": 1e-05,
+  "seed": 42,
+  "train_split": "train",
+  "selection_split": "validation",
+  "final_evaluation_split": "test",
+  "model": "shared per-sensor linear autoregressive forecaster",
+  "input_shape": [
+    null,
+    12,
+    null
+  ],
+  "output_shape": [
+    null,
+    12,
+    null
+  ],
+  "training_objective": "mean squared error across samples, sensors, and forecast steps",
+  "optimizer": "Adam implemented with NumPy",
+  "parameter_shapes": {
+    "weights": [
+      12,
+      12
+    ],
+    "bias": [
+      12
+    ]
+  },
+  "client_compatibility": "parameters independent of sensor count; same parameter shapes for 51- and 52-sensor groups",
+  "best_epoch": 29,
+  "epochs_run": 30
+}

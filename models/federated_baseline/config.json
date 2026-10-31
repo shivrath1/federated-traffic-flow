@@ -1,0 +1,52 @@
+{
+  "lookback_steps": 12,
+  "horizon_steps": 12,
+  "communication_rounds": 30,
+  "local_epochs": 1,
+  "batch_windows": 256,
+  "learning_rate": 0.001,
+  "patience": 5,
+  "min_delta": 1e-05,
+  "seed": 42,
+  "weighting": "number of local sensor-window examples (windows x sensors)",
+  "optimizer_note": "Adam state resets for each client's local work in each round",
+  "model": "shared per-sensor linear autoregressive forecaster",
+  "aggregation": "FedAvg weighted by client training sensor-window example count",
+  "client_sensor_counts": {
+    "client_1": 52,
+    "client_2": 52,
+    "client_3": 52,
+    "client_4": 51
+  },
+  "client_example_counts": {
+    "client_1": 1246284,
+    "client_2": 1246284,
+    "client_3": 1246284,
+    "client_4": 1222317
+  },
+  "selection_split": "validation",
+  "selection_metric": "global validation MSE",
+  "best_round": 30,
+  "rounds_run": 30,
+  "parameters": {
+    "weights": [
+      12,
+      12
+    ],
+    "bias": [
+      12
+    ]
+  },
+  "communication_payload": {
+    "parameters_per_client_bytes": 624,
+    "downlink_bytes_per_round": 2496,
+    "uplink_bytes_per_round": 2496,
+    "downlink_bytes_total": 74880,
+    "uplink_bytes_total": 74880,
+    "total_bytes": 149760,
+    "basis": "float32 model arrays only; excludes transport/protocol/serialization metadata"
+  },
+  "training_time_includes": "local client fitting, parameter aggregation, and validation per round; excludes test evaluation and artifact/plot writing",
+  "test_opened_after_model_selection": true,
+  "privacy_note": "single-machine simulation; raw client arrays remain in local client files and only model parameters are aggregated; no formal differential privacy or secure aggregation"
+}

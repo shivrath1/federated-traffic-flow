@@ -1,0 +1,41 @@
+{
+  "lookback_steps": 12,
+  "horizon_steps": 12,
+  "max_epochs": 30,
+  "batch_windows": 256,
+  "learning_rate": 0.001,
+  "patience": 4,
+  "min_delta": 1e-05,
+  "seed": 42,
+  "train_split": "train",
+  "selection_split": "validation",
+  "final_evaluation_split": "test",
+  "model": "shared per-sensor linear autoregressive forecaster",
+  "input_shape": [
+    null,
+    12,
+    null
+  ],
+  "output_shape": [
+    null,
+    12,
+    null
+  ],
+  "training_objective": "mean squared error across samples, sensors, and forecast steps",
+  "optimizer": "NumPy Adam; state retained across centralized batches and epochs",
+  "selection_metric": "MSE",
+  "best_epoch": 30,
+  "epochs_run": 30,
+  "augmentation": {
+    "noise_std_fraction": 0.05,
+    "synthetic_copies_per_window": 1,
+    "minimum_speed": 0.0,
+    "seed": 42
+  },
+  "augmentation_rule": "5% per-sensor standard deviation fitted from central X_train; independent Gaussian jitter to inputs; targets retained; clip at 0",
+  "augmentation_fit_source": "train split only",
+  "original_training_windows": 23967,
+  "synthetic_training_windows": 23967,
+  "test_opened_after_model_selection": true,
+  "federated_comparison_note": "same noise rule and base seed; central scale is estimated over all central train sensor data, while FedAvg estimates scales independently per client and uses seeds 42-45"
+}

@@ -1,0 +1,80 @@
+{
+  "dataset": "METR-LA",
+  "test": {
+    "mae": 5.522868962441759,
+    "rmse": 11.97366324744669,
+    "mae_by_horizon": [
+      2.939058170083835,
+      3.6664267483179036,
+      4.146843980682305,
+      4.568330269727203,
+      4.991770611631806,
+      5.438316388689005,
+      5.8680690782845675,
+      6.27916783712941,
+      6.584012422487034,
+      6.936448393529215,
+      7.2640101287634415,
+      7.59197351997538
+    ],
+    "rmse_by_horizon": [
+      6.401629744195668,
+      8.067795963667418,
+      9.21674885106813,
+      10.176903259223035,
+      11.019003821689436,
+      11.775003811415159,
+      12.470407542834293,
+      13.10446133087435,
+      13.705537181962537,
+      14.229849769961845,
+      14.729964596268688,
+      15.206115952717886
+    ],
+    "aggregation": "all sample x forecast-step x sensor errors; each scalar prediction has equal weight",
+    "evaluated_values": 12745404
+  },
+  "comparison_with_centralized": {
+    "mae": {
+      "federated": 5.522868962441759,
+      "centralized": 5.698667406542114,
+      "difference_federated_minus_centralized": -0.17579844410035506,
+      "percent_difference_vs_centralized": -3.0849044444765648
+    },
+    "rmse": {
+      "federated": 11.97366324744669,
+      "centralized": 11.969189780755062,
+      "difference_federated_minus_centralized": 0.004473466691628403,
+      "percent_difference_vs_centralized": 0.03737484970637837
+    },
+    "centralized_training_seconds": 28.525508445920423,
+    "federated_training_seconds": 42.89836676500272
+  },
+  "training_seconds": 42.89836676500272,
+  "local_client_training_seconds_sum": 16.98126785364002,
+  "communication": {
+    "parameters_per_client_bytes": 624,
+    "downlink_bytes_per_round": 2496,
+    "uplink_bytes_per_round": 2496,
+    "downlink_bytes_total": 74880,
+    "uplink_bytes_total": 74880,
+    "total_bytes": 149760,
+    "basis": "float32 model arrays only; excludes transport/protocol/serialization metadata"
+  },
+  "rounds_run": 30,
+  "best_round": 30,
+  "test_shape": {
+    "X": [
+      5131,
+      12,
+      207
+    ],
+    "y": [
+      5131,
+      12,
+      207
+    ]
+  },
+  "test_opened_after_model_selection": true,
+  "model_file": "fedavg_global_model.npz"
+}

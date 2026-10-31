@@ -1,0 +1,76 @@
+{
+  "lookback_steps": 12,
+  "horizon_steps": 12,
+  "communication_rounds": 30,
+  "local_epochs": 1,
+  "batch_windows": 256,
+  "learning_rate": 0.001,
+  "patience": 5,
+  "min_delta": 1e-05,
+  "seed": 42,
+  "weighting": "number of local sensor-window examples (windows x sensors)",
+  "optimizer_note": "Adam state resets for each client's local work in each round",
+  "model": "shared per-sensor linear autoregressive forecaster",
+  "aggregation": "FedAvg weighted by client training sensor-window example count",
+  "client_sensor_counts": {
+    "client_1": 52,
+    "client_2": 52,
+    "client_3": 52,
+    "client_4": 51
+  },
+  "client_example_counts": {
+    "client_1": 2492568,
+    "client_2": 2492568,
+    "client_3": 2492568,
+    "client_4": 2444634
+  },
+  "client_original_window_counts": {
+    "client_1": 23967,
+    "client_2": 23967,
+    "client_3": 23967,
+    "client_4": 23967
+  },
+  "client_synthetic_window_counts": {
+    "client_1": 23967,
+    "client_2": 23967,
+    "client_3": 23967,
+    "client_4": 23967
+  },
+  "selection_split": "validation",
+  "selection_metric": "global validation MSE",
+  "best_round": 30,
+  "rounds_run": 30,
+  "parameters": {
+    "weights": [
+      12,
+      12
+    ],
+    "bias": [
+      12
+    ]
+  },
+  "communication_payload": {
+    "parameters_per_client_bytes": 624,
+    "downlink_bytes_per_round": 2496,
+    "uplink_bytes_per_round": 2496,
+    "downlink_bytes_total": 74880,
+    "uplink_bytes_total": 74880,
+    "total_bytes": 149760,
+    "basis": "float32 model arrays only; excludes transport/protocol/serialization metadata"
+  },
+  "training_time_includes": "local client fitting, parameter aggregation, and validation per round; excludes test evaluation and artifact/plot writing",
+  "test_opened_after_model_selection": true,
+  "synthetic_augmentation": {
+    "manifest_file": "models/federated_augmented/synthetic_training_data/synthetic_manifest.json",
+    "parameters": {
+      "noise_std_fraction": 0.05,
+      "synthetic_copies_per_window": 1,
+      "minimum_speed": 0.0,
+      "seed": 42
+    },
+    "generation_seconds": 17.679471284965985,
+    "validation_used": false,
+    "test_used": false
+  },
+  "privacy_note": "single-machine simulation; raw client arrays remain in local client files and only model parameters are aggregated; no formal differential privacy or secure aggregation"
+}
