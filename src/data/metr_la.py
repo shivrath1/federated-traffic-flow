@@ -18,6 +18,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import h5py
 
 DEFAULT_INPUT = Path("data/raw/metr-la.h5")
 DEFAULT_OUTPUT = Path("data/processed/metr_la")
@@ -27,13 +28,36 @@ EXPECTED_INTERVAL = pd.Timedelta(minutes=5)
 
 
 def load_metr_la(path: str | Path = DEFAULT_INPUT) -> pd.DataFrame:
-    """Load and validate the METR-LA pandas HDF5 DataFrame at ``/df``."""
+    """Load and validate the METR-LA pandas HDF5 DataFrame at ``/df``.
+
+    Read the fixed-format pandas HDF5 arrays with h5py rather than pandas' HDF
+    adapter. This preserves the saved frame while avoiding version-specific
+    PyTables metadata parsing on hosted Python runtimes.
+    """
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(f"METR-LA HDF5 file not found: {path}")
     try:
-        frame = pd.read_hdf(path, key="df")
-    except (KeyError, OSError, ValueError) as exc:
+        with h5py.File(path, "r") as store:
+            group = store["df"]
+            if not isinstance(group, h5py.Group):
+                raise ValueError("HDF5 key '/df' is not a group")
+            required = {"axis0", "axis1", "block0_values"}
+            if not required.issubset(group.keys()):
+                raise ValueError("HDF5 key '/df' does not contain the expected pandas frame arrays")
+            sensor_values = group["axis0"][()]
+            timestamp_values = group["axis1"][()]
+            values = group["block0_values"][()]
+            sensors = [bytes(sensor).decode("utf-8") for sensor in sensor_values]
+            timestamps = pd.to_datetime(np.asarray(timestamp_values, dtype=np.int64), unit="ns")
+            if values.ndim != 2 or values.shape != (len(timestamps), len(sensors)):
+                raise ValueError("HDF5 frame arrays have inconsistent dimensions")
+            frame = pd.DataFrame(
+                values,
+                index=pd.DatetimeIndex(timestamps, freq=EXPECTED_INTERVAL),
+                columns=sensors,
+            )
+    except (KeyError, OSError, TypeError, UnicodeDecodeError, ValueError) as exc:
         raise ValueError(f"Could not read a DataFrame from HDF5 key '/df': {exc}") from exc
     validate_frame(frame)
     return frame
