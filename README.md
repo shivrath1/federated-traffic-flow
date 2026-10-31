@@ -100,10 +100,6 @@ python3 -m compileall -q src app tests
 API tests use FastAPI's `TestClient`. The dashboard/API integration was checked using a local API and Streamlit `AppTest`; see `reports/report-evidence.md` for observed results. Local loopback access may be restricted in some managed or sandboxed environments.
 
 ## Further documentation
-
-- [Project instructions](AGENTS.md)
-- [Implementation stages](PLANS.md)
-- [Task tracker](reports/task-tracker.md)
 - [Data preparation report](reports/member-1-data-report.md)
 - [Model report](reports/member-2-model-report.md)
 - [Federated learning report](reports/member-3-federated-report.md)
@@ -111,4 +107,3 @@ API tests use FastAPI's `TestClient`. The dashboard/API integration was checked 
 - [Four-model comparison](reports/final-experiment-comparison.md)
 - [API and dashboard report](reports/api-dashboard-report.md)
 - [Final integration and reproducibility review](reports/final-review.md)
-- [Assessment brief](MSE806-Assessment_Brief.pdf)
