@@ -16,13 +16,14 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from src.api.app import TrafficService
+from app.research_story import summarize_results
 
 MODEL_COLORS = {
-    "Centralized baseline": "#4f6bed",
-    "Centralized with noise augmentation": "#9b72cf",
-    "FedAvg without augmentation": "#078b83",
-    "FedAvg with noise augmentation": "#d18a28",
-    "Persistence baseline": "#7a8496",
+    "Centralized baseline": "#3566B8",
+    "Centralized with noise augmentation": "#7656A8",
+    "FedAvg without augmentation": "#087E78",
+    "FedAvg with noise augmentation": "#B76A18",
+    "Persistence baseline": "#596579",
 }
 
 st.set_page_config(
@@ -34,24 +35,29 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      .stApp { background: #f4f6fa; color: #19263c; }
+      .stApp { background: #f5f7fb; color: #19263c; }
       html, body, [class*="css"] { font-family: 'Avenir Next', 'Segoe UI', system-ui, sans-serif; }
       h1, h2, h3 { font-family: 'Avenir Next', 'Segoe UI', system-ui, sans-serif; color: #172742; letter-spacing: -0.025em; }
       .block-container { max-width: 1440px; padding-top: 1.5rem; padding-bottom: 3rem; }
-      .hero { padding: 1.5rem 1.8rem; border-radius: 18px; color: white;
-              background: linear-gradient(115deg,#132744 0%,#1d4260 62%,#087e7b 100%); margin-bottom: 1rem; }
-      .hero .sub { color: #d5e8ed; font-size: 1.02rem; margin-bottom: .8rem; }
+      .hero { padding: 1.65rem 1.9rem; border-radius: 16px; color: white;
+              background: #172f4b; border-top: 5px solid #13998f; margin-bottom: 1rem; }
+      .hero .sub { color: #ffffff; font-size: 1.18rem; font-weight: 650; margin-bottom: .8rem; }
       .hero .desc { color: #f2f7f8; max-width: 1100px; font-size: .96rem; line-height: 1.55; }
-      .section-kicker { color: #087e7b; text-transform: uppercase; letter-spacing: .1em;
+      .section-kicker { color: #087e78; text-transform: uppercase; letter-spacing: .1em;
                          font-weight: 700; font-size: .75rem; margin-bottom: -.55rem; }
       .soft-panel { padding: 1rem 1.15rem; background: white; border: 1px solid #e3e8ef;
-                    border-radius: 14px; min-height: 95px; }
+                    border-radius: 12px; min-height: 95px; }
       .soft-panel b { color: #172742; }
       .muted { color: #566579; }
+      .finding { padding: .9rem 1rem; background: #fff; border-left: 4px solid #13998f;
+                 border-radius: 5px 11px 11px 5px; min-height: 90px; }
+      .finding-title { color: #53647a; font-size: .82rem; font-weight: 650; }
+      .finding-body { color: #172742; font-size: 1.02rem; line-height: 1.45; margin-top: .35rem; }
       [data-testid="stMetric"] { background: white; border: 1px solid #e4e9f0; border-radius: 12px; padding: .75rem 1rem; }
       div[data-testid="stDataFrame"] { border: 1px solid #e4e9f0; border-radius: 12px; overflow: hidden; }
       div.stButton > button { border-radius: 9px; border: 1px solid #d8e0e9; color: #233a56; }
-      div.stButton > button:hover { border-color: #078b83; color: #087e7b; }
+      div.stButton > button:hover { border-color: #087e78; color: #087e78; }
+      [data-testid="stPlotlyChart"], .vega-embed { max-width: 100%; }
       hr { border-color: #e1e6ed; }
       footer { visibility: hidden; }
     </style>
@@ -111,8 +117,8 @@ if "forecast_time" not in st.session_state:
 st.markdown(
     """
     <div class="hero">
-      <div class="sub"><i>Evaluating privacy-conscious collaborative traffic forecasting across distributed sensor groups.</i></div>
-      <div class="desc">Traffic forecasting can help researchers understand changing road conditions and support transportation planning. Centralized learning gathers traffic records in one place. Federated learning instead lets simulated client groups train locally and share model updates, rather than pooling their raw training arrays. This project evaluates that approach on historical METR-LA by comparing centralized models, FedAvg, and noise-augmented variants.</div>
+      <div class="sub">Can traffic sensors learn together to predict traffic speed one hour ahead—without pooling their raw training data?</div>
+      <div class="desc">Traffic-speed forecasts help us study changing road conditions and support transportation planning. Centralized training pools records in one place; in this project, four simulated sensor groups instead train locally and share model updates through FedAvg. We compare both approaches, with and without Gaussian noise augmentation, against a simple persistence baseline using historical METR-LA data.</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -122,18 +128,37 @@ st.info(
     icon="ℹ️",
 )
 
-overview = st.columns(3)
-for column, title, text in zip(
-    overview,
-    ("Research question", "What is federated here?", "What is being tested?"),
-    (
-        "Can collaborative training produce useful one-hour traffic-speed forecasts?",
-        "Four sensor groups train locally in a single-machine simulation; the coordinator averages model parameters with FedAvg.",
-        "Four trained configurations share the same held-out test split. Noise augmentation is evaluated as an experiment, not assumed to help.",
-    ),
-):
+st.markdown("### Key findings · held-out test set")
+story = summarize_results(evaluation["models"], evaluation["persistence_baseline"])
+mae_winner = story["leaders"]["mae"]
+rmse_winner = story["leaders"]["rmse"]
+mae_gap = story["vs_persistence_percent_improvement"][mae_winner]["mae"]
+rmse_gap = story["vs_persistence_percent_improvement"][rmse_winner]["rmse"]
+if story["augmentation_effect_percent"]:
+    effects = story["augmentation_effect_percent"]
+    mae_directions = [effect["mae"] for effect in effects.values()]
+    rmse_directions = [effect["rmse"] for effect in effects.values()]
+    if all(value > 0 for value in mae_directions) and all(value < 0 for value in rmse_directions):
+        noise_summary = "Noise raised MAE and lowered RMSE in both settings; it did not consistently help across metrics."
+    elif story["augmentation_consistently_improves"]:
+        noise_summary = "Noise lowered both metrics in both settings in this single-seed comparison."
+    else:
+        noise_summary = "Noise effects varied by setting or metric; this single-seed comparison does not show a consistent benefit."
+else:
+    noise_summary = "Noise-augmentation comparisons are unavailable in the loaded results."
+
+finding_cols = st.columns(3)
+finding_text = (
+    ("Lowest MAE", f"{mae_winner} · {story['scores'][mae_winner]['mae']:.3f}. This is {abs(mae_gap):.1f}% {'below' if mae_gap >= 0 else 'above'} persistence."),
+    ("Lowest RMSE", f"{rmse_winner} · {story['scores'][rmse_winner]['rmse']:.3f}. This is {abs(rmse_gap):.1f}% {'below' if rmse_gap >= 0 else 'above'} persistence."),
+    ("Noise augmentation", noise_summary),
+)
+for column, (label, body) in zip(finding_cols, finding_text):
     with column:
-        st.markdown(f"<div class='soft-panel'><b>{title}</b><br><span class='muted'>{text}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='finding'><div class='finding-title'>{label}</div><div class='finding-body'>{body}</div></div>", unsafe_allow_html=True)
+st.caption("MAE describes average absolute miss; RMSE weighs larger misses more heavily. A model can lead on one and not the other. Scores use the same full held-out test set; lower is better.")
+with st.expander("Formal research question"):
+    st.markdown("How does Federated Averaging compare with centralized training and a persistence baseline for one-hour-ahead traffic-speed forecasting on METR-LA under a simulated multi-client setting, and what effect does Gaussian noise augmentation have on predictive performance?")
 
 st.write("")
 section_heading("01 · Forecast explorer", "Choose a held-out traffic window", "Select a sensor, saved model, and forecast start time. The date picker is restricted to the test period so every displayed forecast can be checked against actual held-out readings.")
@@ -220,7 +245,7 @@ prediction_rows = [
 window_chart_data = pd.DataFrame(history_rows + input_rows + actual_rows + prediction_rows)
 window_chart_data["timestamp"] = pd.to_datetime(window_chart_data["timestamp"])
 window_series = ["Earlier history", "Model input · previous 60 min", "Held-out actual", "Model forecast"]
-window_colors = ["#8c9aab", "#087e7b", "#d18a28", "#c04d67"]
+window_colors = ["#8794a5", "#087e78", "#C07820", MODEL_COLORS.get(selected_model_name, "#3566B8")]
 window_line = alt.Chart(window_chart_data).mark_line(point=alt.OverlayMarkDef(size=42, filled=True)).encode(
     x=alt.X("timestamp:T", title="Historical time → forecast time", axis=alt.Axis(format="%b %d, %H:%M", labelAngle=-25, grid=False)),
     y=alt.Y("value:Q", title="Traffic speed (dataset units)", scale=alt.Scale(zero=False)),
@@ -237,8 +262,8 @@ origin_rule = alt.Chart(pd.DataFrame({"timestamp": [pd.Timestamp(forecast_result
     x=alt.X("timestamp:T", title="Forecast origin"),
     tooltip=[alt.Tooltip("timestamp:T", title="Forecast begins", format="%Y-%m-%d %H:%M")],
 )
-st.altair_chart((window_line + origin_rule).properties(height=390, title=f"{forecast_result['model_name']} · 60-minute held-out forecast").interactive(), use_container_width=True)
-st.caption("The dashed line marks the first predicted time. The teal line is the exact 12-reading input window; earlier readings provide visual context. Actual future values are shown only to evaluate the forecast, never as model input.")
+st.altair_chart((window_line + origin_rule).properties(height=430, title=f"{forecast_result['model_name']} · next 12 readings (60 minutes)").interactive(), use_container_width=True)
+st.caption("Read left to right: gray is earlier context, teal is the 12 readings (60 minutes) provided to the model, and the dashed line marks the forecast origin. The selected model's colored line is its forecast; amber is the held-out future observed afterward for evaluation. Those future observations are never model inputs.")
 
 window_metrics = forecast_result["selected_window_metrics"]
 persistence_metrics = forecast_result["persistence_baseline"]["metrics"]
@@ -269,7 +294,7 @@ with st.expander("Inspect each five-minute forecast step", expanded=False):
     })
 
 st.divider()
-section_heading("02 · Held-out results", "How do the trained models compare?", "These are the saved full test-set scores over the same 5,131 windows, 12 forecast steps, and 207 sensors. Time-of-day, sensor-specific, and persistence diagnostics below are newly computed from that same test split.")
+section_heading("02 · Held-out results", "How do the trained models compare?", "These are full test-set results over the same 5,131 windows, 12 forecast steps, and 207 sensors. Lower MAE and RMSE mean smaller errors. The best value in each metric is highlighted; persistence and diagnostics are computed from this same test split.")
 overall_rows = [{"Model": item["name"], "MAE": item["overall"]["mae"], "RMSE": item["overall"]["rmse"], "Source": "Saved model result"} for item in evaluation["models"]]
 persistence_eval = evaluation["persistence_baseline"]
 overall_rows.append({"Model": "Persistence baseline", "MAE": persistence_eval["overall"]["mae"], "RMSE": persistence_eval["overall"]["rmse"], "Source": "New calculation on saved test split"})
@@ -284,7 +309,17 @@ for column, metric, title in zip(all_metric_cols, ("MAE", "RMSE"), ("Average abs
     ).properties(height=300, title=title)
     with column:
         st.altair_chart(plot, use_container_width=True)
-st.dataframe(overall_frame.style.format({"MAE": "{:.6f}", "RMSE": "{:.6f}"}), hide_index=True, use_container_width=True)
+def highlight_metric_winner(column: pd.Series) -> list[str]:
+    best = column.min()
+    return ["background-color: #d9f1e9; color: #12463c; font-weight: 700" if value == best else "" for value in column]
+
+
+st.dataframe(
+    overall_frame.style.format({"MAE": "{:.6f}", "RMSE": "{:.6f}"})
+    .apply(highlight_metric_winner, subset=["MAE", "RMSE"]),
+    hide_index=True,
+    use_container_width=True,
+)
 st.caption("MAE averages absolute errors. RMSE takes the square root of average squared errors and puts more weight on large misses. Both aggregate equally over each window × forecast step × sensor value; lower is better.")
 
 mae_by_horizon_rows, rmse_by_horizon_rows = [], []
@@ -328,12 +363,10 @@ with sensor_col:
     st.caption("Per-sensor MAE/RMSE are newly computed across every held-out test window and forecast lead for this sensor.")
 
 section_heading("03 · What the results say", "A trade-off, not a universal augmentation win")
+st.markdown(f"Across the full held-out test set, **{mae_winner}** has the lowest MAE ({story['scores'][mae_winner]['mae']:.6f}) and **{rmse_winner}** has the lowest RMSE ({story['scores'][rmse_winner]['rmse']:.6f}). The full-set persistence baseline is MAE {persistence_eval['overall']['mae']:.6f} and RMSE {persistence_eval['overall']['rmse']:.6f}. The best trained model is {abs(mae_gap):.1f}% {'below' if mae_gap >= 0 else 'above'} persistence MAE and {abs(rmse_gap):.1f}% {'below' if rmse_gap >= 0 else 'above'} persistence RMSE.")
+st.markdown(f"{noise_summary} MAE averages the size of errors; RMSE squares errors before averaging and therefore gives larger misses more influence. That difference can change which model ranks first. These are descriptive results from one seed, not evidence of a general performance guarantee.")
 st.markdown(
-    ""
-    "Across the full test set, FedAvg has the lowest MAE (5.522869), while the centralized baseline has the lowest RMSE among unaugmented models (11.969190 vs 11.973663). Noise augmentation **increased MAE but reduced RMSE** in both training settings. Centralized augmentation moved MAE from 5.698667 to 5.790541 and RMSE from 11.969190 to 11.871505. FedAvg augmentation moved MAE from 5.522869 to 5.665383 and RMSE from 11.973663 to 11.883041. Each run used one seed, so these results are descriptive; they do not establish a reliable general improvement."
-)
-st.markdown(
-    "The persistence baseline is an additional reference that repeats the last observed input for the next 12 steps. The selected-window scores above use the same actual test targets for both the chosen model and persistence, making it easier to judge whether the learned forecast adds value for this one sensor and time."
+    "The persistence baseline repeats each window's final observed input for the next 12 steps. Selected-window MAE/RMSE above compare the selected model and persistence on one sensor and exactly the same 12 held-out targets; the table and charts here summarize the full test split."
 )
 
 st.divider()
