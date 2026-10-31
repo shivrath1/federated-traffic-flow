@@ -61,8 +61,13 @@ class SharedLinearForecaster:
             raise ValueError(f"Expected {self.lookback_steps} input steps, got {X.shape[1]}")
         if X.shape[2] < 1:
             raise ValueError("X must contain at least one sensor")
+        if not np.isfinite(X).all():
+            raise ValueError("X must contain only finite values")
         per_sensor = np.transpose(X, (0, 2, 1))
-        predicted = per_sensor @ self.weights + self.bias
+        with np.errstate(over="ignore", invalid="ignore"):
+            predicted = per_sensor @ self.weights + self.bias
+        if not np.isfinite(predicted).all():
+            raise ValueError("Model prediction contains non-finite values")
         return np.transpose(predicted, (0, 2, 1)).astype(np.float32, copy=False)
 
     def state(self) -> dict[str, np.ndarray]:
@@ -75,6 +80,8 @@ class SharedLinearForecaster:
             raise ValueError("Saved weight shape does not match model configuration")
         if bias.shape != (self.horizon_steps,):
             raise ValueError("Saved bias shape does not match model configuration")
+        if not np.isfinite(weights).all() or not np.isfinite(bias).all():
+            raise ValueError("Saved model parameters must contain only finite values")
         self.weights = weights.copy()
         self.bias = bias.copy()
 

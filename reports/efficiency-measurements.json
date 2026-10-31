@@ -1,0 +1,64 @@
+{
+  "measurement_date": "2026-10-31T21:35:08+13:00",
+  "environment": {
+    "platform": "macOS-10.16-x86_64-i386-64bit",
+    "python": "3.11.7",
+    "numpy": "2.4.6",
+    "pandas": "2.2.3",
+    "streamlit": "1.66.1",
+    "cpu_count_logical": 12
+  },
+  "method": {
+    "clock": "time.perf_counter (wall-clock elapsed)",
+    "dashboard_cold_start": "one Streamlit AppTest render after clearing Streamlit resource cache; excludes OS/process startup and is not deployment latency",
+    "service_and_artifact_load": "one new TrafficService followed by first load of all four saved model artifacts",
+    "selected_forecast": "one first prediction, then ten repeated warm predictions for the service default held-out window and sensor 773869-equivalent first sensor",
+    "evaluation": "first full test evaluation, then one cached evaluation call",
+    "memory": "resource.getrusage maximum resident set size after each stage, normalized to bytes; process-wide high-water mark"
+  },
+  "sample_count": {
+    "dashboard_cold_start": 1,
+    "service_initialization": 1,
+    "all_model_artifacts_load": 1,
+    "selected_forecast_first": 1,
+    "selected_forecast_warm": 10,
+    "full_evaluation_first": 1,
+    "full_evaluation_cached": 1,
+    "rss_snapshots": 2
+  },
+  "timings_seconds": {
+    "dashboard_cold_apptest_render": 4.101765190018341,
+    "service_initialization_data_and_metadata": 0.24064179812557995,
+    "all_four_model_artifacts_load": 0.010169120039790869,
+    "selected_forecast_first": 0.001435551093891263,
+    "selected_forecast_warm_median": 0.0007878955220803618,
+    "selected_forecast_warm_min": 0.0007203570567071438,
+    "selected_forecast_warm_max": 0.0009781168773770332,
+    "full_test_evaluation_initialization": 2.682955387979746,
+    "full_test_evaluation_cached": 2.594897523522377e-06
+  },
+  "memory_bytes": {
+    "process_peak_rss_after_models": 223592448,
+    "process_peak_rss_after_evaluation": 350253056,
+    "dataframe_deep_size": 58085416,
+    "note": "RSS includes interpreter and libraries; this is a process-wide high-water mark, not attributable incremental memory."
+  },
+  "evaluated_test_shape": {
+    "X": [
+      5131,
+      12,
+      207
+    ],
+    "y": [
+      5131,
+      12,
+      207
+    ]
+  },
+  "dashboard_rendered_without_exception": true,
+  "selected_forecast": {
+    "sensor_id": "773869",
+    "model_id": "fedavg",
+    "forecast_origin": "2012-06-13T08:00:00"
+  }
+}

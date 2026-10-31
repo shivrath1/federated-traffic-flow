@@ -53,24 +53,55 @@ def load_federated_model(model_dir: str | Path) -> tuple[SharedLinearForecaster,
 
 def fedavg(states: list[dict[str, np.ndarray]], weights: list[int | float]) -> dict[str, np.ndarray]:
     """Average model tensors by client example counts; reject mismatched states."""
-    if not states or len(states) != len(weights):
+    if not isinstance(states, (list, tuple)) or not states:
+        raise ValueError("Provide at least one non-empty client model update")
+    if not isinstance(weights, (list, tuple, np.ndarray)):
         raise ValueError("Provide one positive aggregation weight for every client state")
-    numeric_weights = np.asarray(weights, dtype=np.float64)
+    try:
+        if len(states) != len(weights):
+            raise ValueError("Provide one positive aggregation weight for every client state")
+    except TypeError:
+        raise ValueError("FedAvg weights must be a one-dimensional sequence") from None
+    try:
+        numeric_weights = np.asarray(weights, dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("FedAvg weights must be numeric, finite, and positive") from None
+    if numeric_weights.ndim != 1:
+        raise ValueError("FedAvg weights must be a one-dimensional sequence")
     if not np.isfinite(numeric_weights).all() or np.any(numeric_weights <= 0):
         raise ValueError("FedAvg weights must be finite and positive")
-    total_weight = float(numeric_weights.sum())
+    with np.errstate(over="ignore", invalid="ignore"):
+        total_weight = float(numeric_weights.sum())
+    if not np.isfinite(total_weight) or total_weight <= 0:
+        raise ValueError("FedAvg total aggregation weight must be finite and positive")
+    if any(not isinstance(state, dict) or not state for state in states):
+        raise ValueError("Every client update must be a non-empty parameter dictionary")
     keys = set(states[0])
-    if not keys or any(set(state) != keys for state in states):
+    if keys != {"weights", "bias"} or any(set(state) != keys for state in states):
         raise ValueError("Every client state must contain the same parameter names")
     aggregated: dict[str, np.ndarray] = {}
     for key in sorted(keys):
         arrays = [np.asarray(state[key]) for state in states]
         if any(array.shape != arrays[0].shape for array in arrays):
             raise ValueError(f"Client parameter shape mismatch for {key}")
+        if any(array.size == 0 or not np.issubdtype(array.dtype, np.floating) for array in arrays):
+            raise ValueError(f"Client parameter arrays for {key} must be non-empty floating-point arrays")
+        if any(not np.isfinite(array).all() for array in arrays):
+            raise ValueError(f"Client parameter arrays for {key} must contain only finite values")
+        if key == "weights" and arrays[0].ndim != 2:
+            raise ValueError("Client weights must be a two-dimensional temporal map")
+        if key == "bias" and arrays[0].ndim != 1:
+            raise ValueError("Client bias must be a one-dimensional horizon vector")
         accumulator = np.zeros(arrays[0].shape, dtype=np.float64)
-        for weight, array in zip(numeric_weights, arrays):
-            accumulator += weight * array.astype(np.float64)
-        aggregated[key] = (accumulator / total_weight).astype(arrays[0].dtype, copy=False)
+        with np.errstate(over="ignore", invalid="ignore"):
+            for weight, array in zip(numeric_weights, arrays):
+                accumulator += weight * array.astype(np.float64)
+            result = (accumulator / total_weight).astype(arrays[0].dtype, copy=False)
+        if not np.isfinite(result).all():
+            raise ValueError(f"FedAvg aggregation for {key} produced non-finite values")
+        aggregated[key] = result
+    if states[0]["weights"].shape[1] != states[0]["bias"].shape[0]:
+        raise ValueError("Client weight horizon and bias dimensions do not match")
     return aggregated
 
 

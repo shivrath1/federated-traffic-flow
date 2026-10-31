@@ -29,6 +29,75 @@ ModelId = Literal["centralized_baseline", "centralized_augmented", "fedavg", "fe
 LOOKBACK_STEPS = 12
 HORIZON_STEPS = 12
 INTERVAL_MINUTES = 5
+REQUIRED_CONFIG_FIELDS = {"lookback_steps", "horizon_steps", "seed", "selection_split", "model"}
+REQUIRED_TEST_METRIC_FIELDS = {"mae", "rmse", "mae_by_horizon", "rmse_by_horizon", "aggregation", "evaluated_values"}
+EXPECTED_MODEL_DESCRIPTION = "shared per-sensor linear autoregressive forecaster"
+
+
+def _is_finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return bool(np.isfinite(float(value)))
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _validate_model_config(config: Any) -> None:
+    if not isinstance(config, dict) or not REQUIRED_CONFIG_FIELDS.issubset(config):
+        raise ValueError("Model configuration is missing required fields")
+    for key, expected in (("lookback_steps", LOOKBACK_STEPS), ("horizon_steps", HORIZON_STEPS)):
+        value = config[key]
+        if isinstance(value, bool) or not isinstance(value, int) or value != expected:
+            raise ValueError("Model configuration has unexpected input/output dimensions")
+    if isinstance(config["seed"], bool) or not isinstance(config["seed"], int) or config["seed"] < 0:
+        raise ValueError("Model configuration has an invalid seed")
+    if config["selection_split"] != "validation":
+        raise ValueError("Model configuration must select checkpoints on validation data")
+    if config["model"] != EXPECTED_MODEL_DESCRIPTION:
+        raise ValueError("Model configuration does not describe the expected forecaster")
+
+
+def _validate_model_metrics(metrics: Any) -> None:
+    if not isinstance(metrics, dict) or metrics.get("dataset") != "METR-LA":
+        raise ValueError("Model metrics must identify the METR-LA dataset")
+    test = metrics.get("test")
+    if not isinstance(test, dict) or not REQUIRED_TEST_METRIC_FIELDS.issubset(test):
+        raise ValueError("Model test metrics are missing required fields")
+    for name in ("mae", "rmse"):
+        value = test[name]
+        if not _is_finite_number(value) or value < 0:
+            raise ValueError(f"Model test metric '{name}' must be finite and non-negative")
+    for name in ("mae_by_horizon", "rmse_by_horizon"):
+        values = test[name]
+        if not isinstance(values, list) or len(values) != HORIZON_STEPS:
+            raise ValueError(f"Model test metric '{name}' must contain {HORIZON_STEPS} values")
+        if any(not _is_finite_number(value) or value < 0 for value in values):
+            raise ValueError(f"Model test metric '{name}' must contain finite non-negative values")
+    if not isinstance(test["aggregation"], str) or not test["aggregation"].strip():
+        raise ValueError("Model test metrics must describe their aggregation")
+    count = test["evaluated_values"]
+    if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+        raise ValueError("Model test metrics must have a positive evaluated_values count")
+
+
+def _validate_split_metadata(metadata: Any, row_count: int) -> None:
+    if not isinstance(metadata, dict) or not isinstance(metadata.get("splits"), dict):
+        raise ValueError("Prepared metadata must contain split definitions")
+    bounds: list[tuple[int, int]] = []
+    for split_name in ("train", "validation", "test"):
+        split = metadata["splits"].get(split_name)
+        if not isinstance(split, dict):
+            raise ValueError(f"Prepared metadata is missing the '{split_name}' split")
+        values = (split.get("row_start_inclusive"), split.get("row_end_exclusive"))
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
+            raise ValueError(f"Prepared metadata has invalid row bounds for '{split_name}'")
+        start, end = values
+        if start < 0 or end <= start or end > row_count:
+            raise ValueError(f"Prepared metadata has out-of-range row bounds for '{split_name}'")
+        bounds.append((start, end))
+    if bounds[0][0] != 0 or bounds[0][1] != bounds[1][0] or bounds[1][1] != bounds[2][0] or bounds[2][1] != row_count:
+        raise ValueError("Prepared metadata splits must be contiguous, chronological, and cover the dataset")
 
 
 class PredictionRequest(BaseModel):
@@ -63,7 +132,8 @@ class TrafficService:
         try:
             self.frame = load_metr_la(dataset_path)
             self.metadata = json.loads((processed_root / "metadata.json").read_text(encoding="utf-8"))
-        except (FileNotFoundError, ValueError, OSError, KeyError, json.JSONDecodeError) as exc:
+            _validate_split_metadata(self.metadata, len(self.frame))
+        except (FileNotFoundError, ValueError, OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
             raise RuntimeError("METR-LA historical data could not be initialized") from exc
         self.sensor_ids = [str(sensor) for sensor in self.frame.columns]
         self._models: dict[str, LoadedModel] = {}
@@ -139,12 +209,17 @@ class TrafficService:
         try:
             config = json.loads((directory / "config.json").read_text(encoding="utf-8"))
             metrics = json.loads((directory / "metrics.json").read_text(encoding="utf-8"))
-            if config.get("lookback_steps") != LOOKBACK_STEPS or config.get("horizon_steps") != HORIZON_STEPS:
-                raise ValueError("Unexpected model dimensions")
+            _validate_model_config(config)
+            _validate_model_metrics(metrics)
+            expected_values = (
+                self.test_end - self.test_start - HORIZON_STEPS + 1
+            ) * HORIZON_STEPS * len(self.sensor_ids)
+            if metrics["test"]["evaluated_values"] != expected_values:
+                raise ValueError("Saved test metric count does not match the prepared test split")
             model = SharedLinearForecaster(config["lookback_steps"], config["horizon_steps"])
             with np.load(directory / spec["weights_file"]) as weights:
                 model.load_state({"weights": weights["weights"], "bias": weights["bias"]})
-        except (FileNotFoundError, OSError, ValueError, KeyError, json.JSONDecodeError):
+        except Exception:
             raise HTTPException(
                 status_code=503,
                 detail=f"The saved artifact for '{spec['name']}' is unavailable or invalid",
@@ -195,7 +270,10 @@ class TrafficService:
         actual_series = self.frame[sensor_id].iloc[position:position + HORIZON_STEPS]
         input_values = input_history.to_numpy(dtype=np.float32)
         actual = actual_series.to_numpy(dtype=np.float32)
-        prediction = selected.model.predict(input_values.reshape(1, LOOKBACK_STEPS, 1))[0, :, 0]
+        try:
+            prediction = selected.model.predict(input_values.reshape(1, LOOKBACK_STEPS, 1))[0, :, 0]
+        except ValueError:
+            raise HTTPException(status_code=503, detail="The saved model could not produce finite predictions") from None
         persistence = np.full(HORIZON_STEPS, input_values[-1], dtype=np.float32)
         model_error = prediction.astype(np.float64) - actual.astype(np.float64)
         persistence_error = persistence.astype(np.float64) - actual.astype(np.float64)
@@ -253,31 +331,27 @@ class TrafficService:
     def model_list(self) -> dict[str, Any]:
         choices = []
         for model_id, spec in MODEL_SPECS.items():
-            directory = self.model_root / spec["directory"]
-            model_file = directory / spec["weights_file"]
-            config_path = directory / "config.json"
-            metrics_path = directory / "metrics.json"
             record: dict[str, Any] = {
                 "model_id": model_id,
                 "name": spec["name"],
                 "training_mode": spec["training_mode"],
-                "available": model_file.is_file() and config_path.is_file() and metrics_path.is_file(),
+                "available": False,
             }
-            if record["available"]:
-                try:
-                    config = json.loads(config_path.read_text(encoding="utf-8"))
-                    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
-                    record["test_metrics"] = metrics["test"]
-                    record["checkpoint"] = {key: config[key] for key in ("best_epoch", "best_round", "epochs_run", "rounds_run") if key in config}
-                    record["configuration"] = {
-                        key: config[key] for key in (
-                            "lookback_steps", "horizon_steps", "max_epochs", "communication_rounds",
-                            "local_epochs", "batch_windows", "learning_rate", "seed", "client_sensor_counts",
-                            "aggregation", "communication_payload", "optimizer", "optimizer_note", "model",
-                        ) if key in config
-                    }
-                except (OSError, ValueError, KeyError, json.JSONDecodeError):
-                    record["available"] = False
+            try:
+                loaded = self.get_model(model_id)
+                config = loaded.config
+                record["available"] = True
+                record["test_metrics"] = loaded.metrics["test"]
+                record["checkpoint"] = {key: config[key] for key in ("best_epoch", "best_round", "epochs_run", "rounds_run") if key in config}
+                record["configuration"] = {
+                    key: config[key] for key in (
+                        "lookback_steps", "horizon_steps", "max_epochs", "communication_rounds",
+                        "local_epochs", "batch_windows", "learning_rate", "seed", "client_sensor_counts",
+                        "aggregation", "communication_payload", "optimizer", "optimizer_note", "model",
+                    ) if key in config
+                }
+            except HTTPException:
+                pass
             choices.append(record)
         return {"models": choices}
 
@@ -285,11 +359,18 @@ class TrafficService:
         try:
             with np.load(self.processed_root / "test.npz") as stored:
                 X, y = stored["X"], stored["y"]
-        except (FileNotFoundError, OSError, KeyError, ValueError):
+        except Exception:
             raise HTTPException(status_code=503, detail="Prepared held-out evaluation data is unavailable") from None
         expected_samples = self.test_end - self.test_start - HORIZON_STEPS + 1
-        if X.shape != (expected_samples, LOOKBACK_STEPS, len(self.sensor_ids)) or y.shape != (expected_samples, HORIZON_STEPS, len(self.sensor_ids)):
-            raise HTTPException(status_code=503, detail="Prepared held-out evaluation data has an invalid shape")
+        if (
+            X.shape != (expected_samples, LOOKBACK_STEPS, len(self.sensor_ids))
+            or y.shape != (expected_samples, HORIZON_STEPS, len(self.sensor_ids))
+            or not np.issubdtype(X.dtype, np.floating)
+            or not np.issubdtype(y.dtype, np.floating)
+            or not np.isfinite(X).all()
+            or not np.isfinite(y).all()
+        ):
+            raise HTTPException(status_code=503, detail="Prepared held-out evaluation data has invalid dimensions or values")
         return X, y
 
     def evaluation(self) -> dict[str, Any]:
@@ -312,12 +393,19 @@ class TrafficService:
             calculated_abs = 0.0
             calculated_sq = 0.0
             calculated_count = 0
+            calculated_abs_by_horizon = np.zeros(HORIZON_STEPS, dtype=np.float64)
+            calculated_sq_by_horizon = np.zeros(HORIZON_STEPS, dtype=np.float64)
             for begin in range(0, sample_count, 256):
                 end = min(begin + 256, sample_count)
-                error = loaded.model.predict(X[begin:end]).astype(np.float64) - y[begin:end].astype(np.float64)
+                try:
+                    error = loaded.model.predict(X[begin:end]).astype(np.float64) - y[begin:end].astype(np.float64)
+                except ValueError:
+                    raise HTTPException(status_code=503, detail="A saved model could not produce finite evaluation predictions") from None
                 calculated_abs += float(np.abs(error).sum())
                 calculated_sq += float(np.square(error).sum())
                 calculated_count += int(error.size)
+                calculated_abs_by_horizon += np.abs(error).sum(axis=(0, 2))
+                calculated_sq_by_horizon += np.square(error).sum(axis=(0, 2))
                 sensor_abs += np.abs(error).sum(axis=(0, 1))
                 sensor_sq += np.square(error).sum(axis=(0, 1))
                 batch_hours = origin_hours[begin:end]
@@ -330,10 +418,16 @@ class TrafficService:
             calculated_mae = calculated_abs / calculated_count
             calculated_rmse = float(np.sqrt(calculated_sq / calculated_count))
             saved = loaded.metrics["test"]
+            calculated_mae_by_horizon = calculated_abs_by_horizon / (sample_count * sensor_count)
+            calculated_rmse_by_horizon = np.sqrt(calculated_sq_by_horizon / (sample_count * sensor_count))
             matches_saved = bool(
                 np.isclose(calculated_mae, saved["mae"], rtol=1e-6, atol=1e-6)
                 and np.isclose(calculated_rmse, saved["rmse"], rtol=1e-6, atol=1e-6)
+                and np.allclose(calculated_mae_by_horizon, saved["mae_by_horizon"], rtol=1e-6, atol=1e-6)
+                and np.allclose(calculated_rmse_by_horizon, saved["rmse_by_horizon"], rtol=1e-6, atol=1e-6)
             )
+            if not matches_saved:
+                raise HTTPException(status_code=503, detail=f"Saved metrics for '{spec['name']}' do not match the model on held-out data")
             models.append({
                 "model_id": model_id,
                 "name": spec["name"],

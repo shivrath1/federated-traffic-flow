@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import logging
 from datetime import date, datetime, time
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import streamlit as st
 from fastapi import HTTPException
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+LOGGER = logging.getLogger(__name__)
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
@@ -100,9 +102,12 @@ try:
         model_data = research.model_list()
         options = research.forecast_options()
         evaluation = research.evaluation()
-except (HTTPException, RuntimeError, OSError, ValueError) as exc:
-    detail = getattr(exc, "detail", str(exc))
-    st.error(f"Could not load the research data or saved model artifacts: {detail}")
+except HTTPException as exc:
+    st.error(f"Could not load the research data or saved model artifacts: {exc.detail}")
+    st.stop()
+except Exception:
+    LOGGER.exception("Dashboard research-data initialization failed")
+    st.error("Could not load the research data or saved model artifacts. Required project files may be missing or invalid.")
     st.stop()
 
 available_models = [item for item in model_data["models"] if item["available"]]
@@ -211,9 +216,12 @@ st.caption(
 try:
     with st.spinner(f"Evaluating sensor {sensor_id} with {selected_model['name']}…"):
         forecast_result = research.predict(sensor_id, model_id, forecast_origin)
-except (HTTPException, RuntimeError, OSError, ValueError) as exc:
-    detail = getattr(exc, "detail", str(exc))
-    st.error(f"This forecast window could not be evaluated: {detail}")
+except HTTPException as exc:
+    st.error(f"This forecast window could not be evaluated: {exc.detail}")
+    st.stop()
+except Exception:
+    LOGGER.exception("Dashboard forecast evaluation failed")
+    st.error("This forecast could not be evaluated. Check the selected held-out window and saved project artifacts.")
     st.stop()
 
 st.markdown(f"### Sensor {sensor_id} · {forecast_result['model_name']}")

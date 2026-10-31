@@ -60,6 +60,29 @@ class SharedLinearForecasterTests(unittest.TestCase):
             self.assertEqual(loaded.predict(X).shape, (2, 3, 51))
             np.testing.assert_allclose(loaded.predict(X), model.predict(X))
 
+    def test_model_state_rejects_non_finite_weights_and_biases(self):
+        model = SharedLinearForecaster(lookback_steps=4, horizon_steps=3)
+        original = model.state()
+        for parameter, invalid in (("weights", np.nan), ("weights", np.inf), ("bias", np.nan), ("bias", -np.inf)):
+            with self.subTest(parameter=parameter, value=invalid):
+                state = {key: value.copy() for key, value in original.items()}
+                state[parameter].flat[0] = invalid
+                with self.assertRaisesRegex(ValueError, "finite"):
+                    model.load_state(state)
+                np.testing.assert_array_equal(model.weights, original["weights"])
+                np.testing.assert_array_equal(model.bias, original["bias"])
+
+    def test_prediction_rejects_non_finite_input_or_output(self):
+        model = SharedLinearForecaster(lookback_steps=4, horizon_steps=3)
+        invalid_input = np.ones((1, 4, 1), dtype=np.float32)
+        invalid_input[0, 0, 0] = np.nan
+        with self.assertRaisesRegex(ValueError, "finite"):
+            model.predict(invalid_input)
+
+        model.weights.fill(np.finfo(np.float32).max)
+        with self.assertRaisesRegex(ValueError, "prediction contains non-finite"):
+            model.predict(np.full((1, 4, 1), np.finfo(np.float32).max, dtype=np.float32))
+
 
 if __name__ == "__main__":
     unittest.main()
