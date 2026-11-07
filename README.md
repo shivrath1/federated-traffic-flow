@@ -96,6 +96,34 @@ python3 -m compileall -q src app tests
 
 API tests use FastAPI's `TestClient`. The dashboard was also checked with Streamlit `AppTest` loading the tracked data and artifacts directly, with no API server running; see `reports/report-evidence.md` for observed results.
 
+## Secure FedAvg transport experiment
+
+`src/federated/secure_fedavg.py` runs the existing four-client FedAvg settings with AES-256-GCM protecting each serialized client model update before the simulated client/coordinator boundary. The coordinator checks message version, client identifier, communication round, session identity, nonce, and authentication tag, then decrypts every update before calling the existing FedAvg aggregator. It rejects the complete round before aggregation if any update fails verification. The original FedAvg runner and its saved baseline artifacts are not changed.
+
+AES-GCM provides message confidentiality and authentication/integrity when used with a secret key. Here it authenticates possession of a client-specific shared secret; it does not establish a public-key identity or provide non-repudiation. Set a distinct, cryptographically random 32-byte key for each client as a 64-character hexadecimal environment variable. The example below generates fresh keys in the current shell; keep them out of source control and do not reuse a value across clients:
+
+```bash
+export FEDERATED_CLIENT_KEY_CLIENT_1="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+export FEDERATED_CLIENT_KEY_CLIENT_2="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+export FEDERATED_CLIENT_KEY_CLIENT_3="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+export FEDERATED_CLIENT_KEY_CLIENT_4="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+```
+
+Install dependencies (including `cryptography`) with `python3 -m pip install -r requirements.txt`, then run the secure comparison:
+
+```bash
+python3 -m src.federated.secure_fedavg
+```
+
+The command reads the existing prepared METR-LA partitions and baseline configuration and writes a separate experiment under `models/federated_secure_baseline/`. It does not overwrite `models/federated_baseline/`. A persistent SQLite replay ledger in that output directory issues unique 96-bit nonces and retires the previous session on a new run or process restart. Keep the ledger with the experiment output; deleting it discards replay history. Run focused and full tests with:
+
+```bash
+python3 -m pytest -q tests/test_federated_security.py tests/test_federated.py
+python3 -m pytest -q
+```
+
+This remains a single-process simulation, not a network deployment. The experiment does not provide secure aggregation, digital signatures, differential privacy, malicious-client defenses, production key management, or real multi-machine networking. AES-GCM protects each update in this modeled boundary; the coordinator decrypts updates and can inspect them before aggregation. Anyone who obtains a client's shared key can impersonate possession of that key. The persistent replay ledger is local coordinator state and must itself be protected and backed up in a real deployment. Encryption overhead measurements are local CPU and serialized-payload measurements, not network latency or throughput.
+
 ## Further documentation
 - [Data preparation report](reports/member-1-data-report.md)
 - [Model report](reports/member-2-model-report.md)
